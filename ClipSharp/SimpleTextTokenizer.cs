@@ -4,15 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace ClipSharp;
 
-public interface ITextTokenizer
+public partial class SimpleTextTokenizer : ITextTokenizer
 {
-    IReadOnlyCollection<int> Encode(string input);
+    public const string StartOfText = "<|startoftext|>";
+    public const string EndOfText = "<|endoftext|>";
 
-    string Decode(IEnumerable<int> tokens);
-}
-
-public partial class SimpleTokenizer : ITextTokenizer
-{
     [GeneratedRegex("""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+""", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex BpePattern();
 
@@ -22,19 +18,16 @@ public partial class SimpleTokenizer : ITextTokenizer
 
     private readonly Dictionary<byte, char> _byteEncoder;
     private readonly Dictionary<char, byte> _byteDecoder;
-    private readonly Dictionary<(string, string), float> _bpeRanks;
+    private readonly Dictionary<string, float> _bpeRanks;
     private readonly Dictionary<string, int> _vocabEncoder;
     private readonly Dictionary<int, string> _vocabDecoder;
 
     private Dictionary<string, string> _bpeCache;
 
-    public static SimpleTokenizer Load()
+    public static SimpleTextTokenizer Load()
     {
-        // generate byte encoder
-        var byteEncoder = BytesToUnicode();
-
         // generate vocab encoder
-        var merges = new List<(string, string)>();
+        var merges = new List<string>();
         using (var fileStream = new FileStream("./bpe_simple_vocab_16e6.txt.gz", FileMode.Open))
         using (var textStream = new GZipStream(fileStream, CompressionMode.Decompress))
         {
@@ -42,31 +35,56 @@ public partial class SimpleTokenizer : ITextTokenizer
 
             reader.ReadLine(); // ignore first line
             string? line;
-            while ((line = reader.ReadLine()) is not null)
+            while ((line = reader.ReadLine()) is not null && merges.Count < 49152 - 256 - 2) // not sure why the file contains extra data...
             {
                 if (line.Length == 0) continue;
 
                 var bpe = line.Split(' ');
-                if (bpe.Length == 0) continue;
+                if (bpe.Length != 2) continue;
 
-                merges.Add((bpe[0], bpe[1]));
+                merges.Add(line);
             }
         }
 
-        var vocab = byteEncoder.Values.Select(c => $"{c}</w>").ToList();
+        // generate byte encoder
+        var (byteEncoder, byteDecoder) = BytesToUnicode();
+        var vocab = byteEncoder.Values.Select(c => new string(c, 1)).ToList();
+        vocab.AddRange(byteEncoder.Values.Select(c => $"{c}</w>"));
+
+        int index = 0;
+        var bpeRanks = new Dictionary<string, float>();
+
+        // append merges
         foreach (var merge in merges)
-        {
-            vocab.Add(string.Join(" ", merge));
+        {            
+            vocab.Add(merge.Replace(" ", ""));
+
+            bpeRanks.Add(merge, index);
+            index++;
         }
-        vocab.AddRange(new[] { "<|startoftext|>", "<|endoftext|>" });
+        vocab.AddRange(new[] { StartOfText, EndOfText });
 
+        var vocabEncoder = new Dictionary<string, int>();
+        var vocabDecoder = new Dictionary<int, string>();
+        index = 0;
+        foreach (var entry in vocab)
+        {
+            vocabEncoder.Add(entry, index);
+            vocabDecoder.Add(index, entry);
+            index++;
+        }
 
-        SimpleTokenizer tokenizer = new SimpleTokenizer(byteEncoder, merges, vocab);
+        SimpleTextTokenizer tokenizer = new SimpleTextTokenizer(
+            byteEncoder,
+            byteDecoder,
+            bpeRanks,
+            vocabEncoder,
+            vocabDecoder);
 
         return tokenizer;
     }
 
-    private static Dictionary<byte, char> BytesToUnicode()
+    private static (Dictionary<byte, char>, Dictionary<char, byte>) BytesToUnicode()
     {
         var bs = new List<byte>();
         var cs = new List<char>();
@@ -93,20 +111,26 @@ public partial class SimpleTokenizer : ITextTokenizer
         }
 
         int n = 0;
-        for (byte b = byte.MinValue; b <= byte.MaxValue; b++)
+        for (int i = 0; i < 256; i++)
         {
+            byte b = (byte)i;
             if (!bs.Contains(b))
             {
                 bs.Add(b);
                 cs.Add((char)(256 + n));
-                n += 1;
+                n++;
             }
         }
 
-        //cs.AddRange(bs.GetRange(256, 25).Select(b => (char )b));
-        var result = new Dictionary<byte, char>();
-        for (int i = 0; i < bs.Count; i++) result[bs[i]] = cs[i];
-        return result;
+        var encoder = new Dictionary<byte, char>();
+        var decoder = new Dictionary<char, byte>();
+        for (int i = 0; i < bs.Count; i++)
+        {
+            encoder[bs[i]] = cs[i];
+            decoder[cs[i]] = bs[i];
+        }
+
+        return (encoder, decoder);
     }
 
     private static IList<(string, string)> GetPairs(string[] word)
@@ -122,46 +146,44 @@ public partial class SimpleTokenizer : ITextTokenizer
         return pairs;
     }
 
-    private static (string, string) GetBySmallestRank(IEnumerable<(string, string)> pairs,
-    IReadOnlyDictionary<(string, string), float> bpeRanks)
+    private static (string, string) GetBySmallestRank(IEnumerable<(string, string)> pairs, IReadOnlyDictionary<string, float> bpeRanks)
     {
-        return pairs.MinBy(p => bpeRanks.GetValueOrDefault(p, float.PositiveInfinity));
+        return pairs.MinBy(p => bpeRanks.GetValueOrDefault($"{p.Item1} {p.Item2}", float.PositiveInfinity));
     }
 
-    public SimpleTokenizer(Dictionary<byte, char> byteEncoder, IReadOnlyCollection<(string, string)> orderedMerges, IReadOnlyCollection<string> orderedVocabulary)
+    public SimpleTextTokenizer(
+        Dictionary<byte, char> byteEncoder,
+        Dictionary<char, byte> byteDecoder,
+        Dictionary<string, float> bpeRanks,
+        Dictionary<string, int> vocabEncoder,
+        Dictionary<int, string> vocabDecoder)
     {
         _byteEncoder = byteEncoder;
-        _byteDecoder = byteEncoder.ToDictionary(kv => kv.Value, kv => kv.Key);
+        _byteDecoder = byteDecoder;
 
-        _bpeRanks = new Dictionary<(string, string), float>();
-        int index = 0;
-        foreach (var merge in orderedMerges)
-        {
-            _bpeRanks.Add(merge, index);
-            index++;
-        }
+        _bpeRanks = bpeRanks;
 
-        _vocabEncoder = new Dictionary<string, int>();
-        _vocabDecoder = new Dictionary<int, string>();
-        index = 0;
-        foreach (var entry in orderedVocabulary)
-        {
-            _vocabEncoder.Add(entry, index);
-            _vocabDecoder.Add(index, entry);
-            index++;
-        }
+        _vocabEncoder = vocabEncoder;
+        _vocabDecoder = vocabDecoder;
 
         _bpeCache = new Dictionary<string, string>()
         {
-            { "<|startoftext|>", "<|startoftext|>" },
-            { "<|endoftext|>", "<|endoftext|>" }
+            { StartOfText, StartOfText },
+            { EndOfText, EndOfText }
         };
     }
+
+    public int SotToken => _vocabEncoder[StartOfText];
+
+    public int EotToken => _vocabEncoder[EndOfText];
 
     public IReadOnlyCollection<int> Encode(string input)
     {
         // TODO: do I need to re-implement the ftfy.fix_text? 
-        var text = Whitespace().Replace(input, " ").Trim();
+        var text = Whitespace()
+            .Replace(input, " ")
+            .Trim()
+            .ToLowerInvariant();
 
         var bpeTokens = new List<int>();
         var matches = BpePattern().Matches(text);
@@ -169,9 +191,15 @@ public partial class SimpleTokenizer : ITextTokenizer
         foreach (Match match in matches)
         {
             var bytes = Encoding.UTF8.GetBytes(match.Value);
-            var encodedMatch = new string(bytes.Select(b => _byteEncoder[b]).ToArray());
-            var bpeString = BytePairEncode(encodedMatch);
-            bpeTokens.AddRange(bpeString.Split(' ').Select(bpeToken => _vocabEncoder[bpeToken]));
+            var reEncodedString = new string(bytes.Select(b => _byteEncoder[b]).ToArray());
+            var bpeString = BytePairEncode(reEncodedString);
+
+            var tokens = bpeString
+                .Split(' ')
+                .Select(bpeToken => _vocabEncoder[bpeToken])
+                .ToArray();
+
+            bpeTokens.AddRange(tokens);
         }
 
         return bpeTokens.ToArray();
@@ -201,7 +229,8 @@ public partial class SimpleTokenizer : ITextTokenizer
         {
             // get item with the smallest rank
             var bigram = GetBySmallestRank(pairs, _bpeRanks);
-            if (_bpeRanks.ContainsKey(bigram) == false) break;
+            var bigramStr = $"{bigram.Item1} {bigram.Item2}";
+            if (_bpeRanks.ContainsKey(bigramStr) == false) break;
 
             var (first, second) = bigram;
             var newWord = new List<string>();
