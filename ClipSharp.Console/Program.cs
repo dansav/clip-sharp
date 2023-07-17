@@ -1,67 +1,75 @@
 // See https://aka.ms/new-console-template for more information
 using ClipSharp;
+using System.CommandLine;
 
 Console.WriteLine("Hello, World!");
 
-var textTokenizer = SimpleTextTokenizer.Load();
+var rootCommand = new RootCommand("C# CLIP example application.");
 
-var textModel = TextualModel.Load("clip-vit-base-patch16-textual-float16.onnx", textTokenizer);
+var textOption = new Option<FileInfo?>("--text", "The path to a text file where every line is a 'prompt'");
+var imagesOption = new Option<DirectoryInfo?>("--images", "The path to a directory where images, that should be described, are store");
 
-var texts = new[] {
-    "a close up photo of a cherry blossom",
-    "cherry blossom",
-    "flowers",
-    "plant",
-    "processing plant",
-    "a large industrial plant with many pipes, walkways and railings",
-    "ruhrgebiet",
-    "industry",
-    "a photo taken on a bright and sunny day",
-    "a photo taken on a dark and cloudy day",
-    "a photo taken at midnight",
-    "bees",
-    "cars",
-    "dogs and cats",
-};
+rootCommand.AddOption(textOption);
+rootCommand.AddOption(imagesOption);
+rootCommand.SetHandler(Start, textOption, imagesOption);
 
-var textEmbeddings = textModel.Encode(texts);
+rootCommand.Invoke(args);
 
-Console.WriteLine(texts.Length);
-Console.WriteLine(textEmbeddings.Count);
-
-var images = new[] {
-    "flowers.jpg",
-    "heavy-industry.jpg",
-};
-
-
-var visualModel = VisualModel.Load("clip-vit-base-patch16-visual-float16.onnx");
-
-var imageEmbeddings = visualModel.Encode(images);
-Console.WriteLine($"Embeddings shape: {imageEmbeddings.Count}");
-
-Console.WriteLine();
-foreach (var (image, ie) in images.Zip(imageEmbeddings))
+void Start(FileInfo? file, DirectoryInfo? imageDir)
 {
-    var similarities = new List<(string Text, float Similarity)>();
+    if (file is null || !file.Exists) file = new FileInfo("text.txt");
 
-    foreach (var (text, te) in texts.Zip(textEmbeddings))
+    var texts = File.ReadAllLines(file.FullName);
+
+    string[] images;
+    if (imageDir?.Exists == true)
     {
-        var similarity = CosineSimilarity(ie, te);
-        similarities.Add((text, similarity));
+        images = Directory.GetFiles(imageDir.FullName, "*", SearchOption.AllDirectories);
+    }
+    else
+    {
+        images = new[]
+        {
+            "images/flowers.jpg",
+            "images/heavy-industry.jpg",
+        };
     }
 
-    var sorted = similarities.OrderByDescending(s => s.Similarity);
-    Console.WriteLine($"Image: {image}");
-    foreach (var similarity in sorted)
-    {
-        Console.WriteLine($"{similarity.Similarity:0.0000}\t{similarity.Text}");
-    }
+    var textTokenizer = SimpleTextTokenizer.Load();
+
+    var textModel = TextualModel.Load("clip-vit-base-patch16-textual-float16.onnx", textTokenizer);
+
+    var textEmbeddings = textModel.Encode(texts);
+
+    Console.WriteLine(texts.Length);
+    Console.WriteLine(textEmbeddings.Count);
+
+    var visualModel = VisualModel.Load("clip-vit-base-patch16-visual-float16.onnx");
+
+    var imageEmbeddings = visualModel.Encode(images);
+    Console.WriteLine($"Embeddings shape: {imageEmbeddings.Count}");
 
     Console.WriteLine();
+    foreach (var (image, ie) in images.Zip(imageEmbeddings))
+    {
+        var similarities = new List<(string Text, float Similarity)>();
+
+        foreach (var (text, te) in texts.Zip(textEmbeddings))
+        {
+            var similarity = CosineSimilarity(ie, te);
+            similarities.Add((text, similarity));
+        }
+
+        var sorted = similarities.OrderByDescending(s => s.Similarity);
+        Console.WriteLine($"Image: {image}");
+        foreach (var similarity in sorted)
+        {
+            Console.WriteLine($"{similarity.Similarity:0.0000}\t{similarity.Text}");
+        }
+
+        Console.WriteLine();
+    }
 }
-
-
 
 // def cosine_similarity(a, b):
 //     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -78,8 +86,6 @@ float CosineSimilarity(float[] a, float[] b)
         normB += b[i] * b[i];
     }
 
-    var cosineSimilarity = dotProduct / (float)(Math.Sqrt(normA) * Math.Sqrt(normB));
-    
-
+    var cosineSimilarity = dotProduct / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
     return cosineSimilarity;
 }
