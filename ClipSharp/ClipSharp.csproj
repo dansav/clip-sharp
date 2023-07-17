@@ -27,9 +27,6 @@
     <None Update="clip-vit-base-patch16-visual-float16.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="clip-vit-base-patch16-visual-float32.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>
