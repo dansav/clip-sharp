@@ -19,7 +19,10 @@ void Start(FileInfo? file, DirectoryInfo? imageDir)
 {
     if (file is null || !file.Exists) file = new FileInfo("text.txt");
 
-    var texts = File.ReadAllLines(file.FullName);
+    var texts = File.ReadAllLines(file.FullName)
+        .Select(line => line.Trim())
+        .Where(line => line.Length > 0)
+        .ToArray();
 
     string[] images;
     if (imageDir?.Exists == true)
