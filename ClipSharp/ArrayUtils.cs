@@ -1,4 +1,4 @@
-﻿using Microsoft.ML.OnnxRuntime.Tensors;
+using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace ClipSharp;
 
@@ -18,7 +18,7 @@ public static class ArrayUtils
             {
                 for (var k = 0; k < K; k++)
                 {
-                    z[x++] = (Float16)input[i, j, k];
+                    z[x++] = input[i, j, k].ToFloat16();
                 }
             }
         }

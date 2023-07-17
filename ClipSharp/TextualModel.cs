@@ -1,6 +1,5 @@
-﻿using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using System;
 using System.Diagnostics;
 
 namespace ClipSharp;
@@ -80,7 +79,7 @@ public class TextualModel
             output[i] = new float[embeddings.Dimensions[1]];
             for (int j = 0; j < embeddings.Dimensions[1]; j++)
             {
-                output[i][j] = embeddings[i,j];
+                output[i][j] = embeddings[i,j].ToSingle();
             }
         }
 

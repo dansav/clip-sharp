@@ -1,6 +1,5 @@
-﻿// See https://aka.ms/new-console-template for more information
+// See https://aka.ms/new-console-template for more information
 using ClipSharp;
-using static System.Net.Mime.MediaTypeNames;
 
 Console.WriteLine("Hello, World!");
 
@@ -80,6 +79,7 @@ float CosineSimilarity(float[] a, float[] b)
     }
 
     var cosineSimilarity = dotProduct / (float)(Math.Sqrt(normA) * Math.Sqrt(normB));
+    
 
     return cosineSimilarity;
 }
