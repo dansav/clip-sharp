@@ -26,12 +26,12 @@
             <ListView x:Name="ImageList" ItemsSource="{Binding ImageFiles}" SelectedItem="{Binding SelectedImage}" >
                 <ListView.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <UniformGrid />
+                        <UniformGrid Columns="4" />
                     </ItemsPanelTemplate>
                 </ListView.ItemsPanel>
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Image Source="{Binding}" />
+                        <Image Source="{Binding}" Width="250" />
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
@@ -51,7 +51,7 @@
                   Grid.ColumnSpan="2"
                   Margin="5"
                   Header="Manage descriptions">
-            <DockPanel>
+            <DockPanel IsEnabled="False">
 
                 <Grid DockPanel.Dock="Right" VerticalAlignment="Center">
                     <StackPanel Width="200">
