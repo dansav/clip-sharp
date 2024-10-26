@@ -29,7 +29,6 @@ namespace ClipSharp.Example.Wpf
         private TextualModel? _textModel;
         private VisualModel? _visualModel;
 
-        private string[]? _descriptionList;
         private (string First, float[] Second)[]? _descriptionEmbeddings;
 
         public void Initialize()

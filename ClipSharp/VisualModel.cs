@@ -39,7 +39,7 @@ public class VisualModel
         var input = _session.InputMetadata.First();
         if (input.Value.Dimensions.Length != 4 || input.Value.Dimensions[2] != input.Value.Dimensions[3])
         {
-            throw new ArgumentException($"Unexpected input dimensions (expected height and witdth to be equal)");
+            throw new ArgumentException($"Unexpected input dimensions (expected height and width to be equal)");
         }
 
         _inputSize = input.Value.Dimensions[2];
